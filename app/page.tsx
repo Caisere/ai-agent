@@ -8,7 +8,6 @@ type Message = {
 };
 
 export default function Home() {
-
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,21 +20,48 @@ export default function Home() {
     setInput("");
     setLoading(true);
 
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: input, chatHistory: messages }),
-    });
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: input, chatHistory: messages }),
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    const assistantMessage: Message = {
-      role: "assistant",
-      content: data.message,
-    };
-    
-    setMessages((prev) => [...prev, assistantMessage]);
-    setLoading(false);
+      if (!response?.ok) {
+        // const errorMessage = {
+        //   role: "assistant",
+        //   content: data.error || "Something went wrong, please try again.",
+        // };
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: data.error || "Something went wrong, please try again.",
+          },
+        ]);
+        return;
+      }
+
+      const assistantMessage: Message = {
+        role: "assistant",
+        content: data.message,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+      setLoading(false);
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Could not reach Aria, check your connection and try again.",
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

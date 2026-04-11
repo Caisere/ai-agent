@@ -4,6 +4,11 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getMovies, addMovie, markAsWatched, removeMovie } from "@/lib/movies";
 import { tools } from "@/lib/tools";
 
+type ApiError = {
+  status?: number;
+  message?: string;
+};
+
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 if (!GEMINI_API_KEY) {
@@ -13,65 +18,86 @@ if (!GEMINI_API_KEY) {
 const client = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 export async function POST(req: NextRequest) {
-  const { message, chatHistory } = await req.json();
+  try {
+    const { message, chatHistory } = await req.json();
 
-  const model = client.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction: `You are Aria, a helpful movie watchlist assistant. 
+    const model = client.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      systemInstruction: `You are Aria, a helpful movie watchlist assistant. 
     You help users manage their movie watchlist.
     When a user wants to mark a movie as watched or remove it, always call getMovies first to get the correct id, then perform the action.
     Always confirm what action you took after using a tool.`,
-    tools: [{ functionDeclarations: tools }],
-  });
+      tools: [{ functionDeclarations: tools }],
+    });
 
-  const chat = model.startChat({
-    history: chatHistory.map((msg: { role: string; content: string }) => ({
-      role: msg.role === "assistant" ? "model" : "user",
-      parts: [{ text: msg.content }],
-    })),
-  });
+    const chat = model.startChat({
+      history: chatHistory.map((msg: { role: string; content: string }) => ({
+        role: msg.role === "assistant" ? "model" : "user",
+        parts: [{ text: msg.content }],
+      })),
+    });
 
-  const result = await chat.sendMessage(message);
+    const result = await chat.sendMessage(message);
 
-  const response = result.response;
+    const response = result.response;
 
-  const toolCall = response.candidates?.[0]?.content?.parts?.find(
-    (p) => p.functionCall,
-  );
+    const toolCall = response.candidates?.[0]?.content?.parts?.find(
+      (p) => p.functionCall,
+    );
 
-  if (toolCall?.functionCall) {
-    const { name, args } = toolCall.functionCall;
-    const fnArgs = args as Record<string, string>;
+    if (toolCall?.functionCall) {
+      const { name, args } = toolCall.functionCall;
+      const fnArgs = args as Record<string, string>;
 
-    let toolResult;
+      let toolResult;
 
-    if (name === "getMovies") {
-      toolResult = await getMovies();
-    } else if (name === "addMovie") {
-      toolResult = await addMovie(fnArgs.title);
-    } else if (name === "markAsWatched") {
-      toolResult = await markAsWatched(fnArgs.id);
-    } else if (name === "removeMovie") {
-      toolResult = await removeMovie(fnArgs.id);
+      if (name === "getMovies") {
+        toolResult = await getMovies();
+      } else if (name === "addMovie") {
+        toolResult = await addMovie(fnArgs.title);
+      } else if (name === "markAsWatched") {
+        toolResult = await markAsWatched(fnArgs.id);
+      } else if (name === "removeMovie") {
+        toolResult = await removeMovie(fnArgs.id);
+      }
+
+      const followUp = await chat.sendMessage([
+        {
+          functionResponse: {
+            name,
+            response: { result: toolResult },
+          },
+        },
+      ]);
+
+      return NextResponse.json({
+        message: followUp.response.text(),
+      });
     }
 
-    const followUp = await chat.sendMessage([
-      {
-        functionResponse: {
-          name,
-          response: { result: toolResult },
-        },
-      },
-    ]);
-
     return NextResponse.json({
-      message: followUp.response.text(),
+      message: response.text(),
     });
-  }
+  } catch (err) {
+    const error = err as ApiError;
 
-  return NextResponse.json({
-    message: response.text(),
-  });
+    console.error("Chat error:", error);
+
+    if (error?.status === 429) {
+      return Response.json(
+        {
+          error:
+            "I am a little overwhelmed right now, please try again in a few seconds.",
+        },
+        { status: 429 },
+      );
+    }
+
+    return Response.json(
+      { error: "Something went wrong, please try again." },
+      { status: 500 },
+    );
+  }
 }
 
 // const API_KEY = process.env.ANTHROPIC_API_KEY
