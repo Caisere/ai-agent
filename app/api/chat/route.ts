@@ -12,7 +12,7 @@ const client = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 export async function POST(req: NextRequest) {
 
-  const { message } = await req.json();
+  const { message, chatHistory } = await req.json();
 
   const model = client.getGenerativeModel({
     model: "gemini-2.5-flash",
@@ -20,7 +20,14 @@ export async function POST(req: NextRequest) {
       "You are a helpful assistant called Aria. You are friendly, concise and straight to the point.",
   });
 
-  const result = await model.generateContent(message);
+  const chat = model.startChat({
+    history: chatHistory.map((msg: {role: string, content: string}) => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{text: msg.content}]
+    }))
+  })
+
+  const result = await chat.sendMessage(message);
 
   const text = result.response.text();
 
