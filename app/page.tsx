@@ -9,8 +9,8 @@ type Message = {
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [input, setInput] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
 
   async function sendMessage() {
     if (!input.trim()) return;
@@ -30,10 +30,6 @@ export default function Home() {
       const data = await response.json();
 
       if (!response?.ok) {
-        // const errorMessage = {
-        //   role: "assistant",
-        //   content: data.error || "Something went wrong, please try again.",
-        // };
         setMessages((prev) => [
           ...prev,
           {
